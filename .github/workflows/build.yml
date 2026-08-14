@@ -1,0 +1,72 @@
+name: Build ImmortalWrt for NanoPi M4
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.config'
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: SSH connection to Actions
+        required: false
+        default: 'false'
+
+env:
+  TUNA_MIRROR: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Free up disk space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Initialize ImmortalWrt
+      uses: immortalwrt/immortalwrt@master
+      with:
+        target: rockchip/armv8
+        subtarget: armv8
+        config: .config
+
+    - name: Update and install feeds
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Download packages
+      run: |
+        make defconfig
+        make download -j8
+
+    - name: Compile firmware
+      run: |
+        make -j1 || make -j1 V=s
+        echo BUILD_STATUS=success >> $GITHUB_ENV
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: ImmortalWrt-NanoPiM4
+        path: openwrt-armvirt64/
+
+    - name: Clean up workflow runs
+      uses: Mattraks/delete-workflow-runs@main
+      if: always()
+      with:
+        retain_days: 30
+        keep_minimum_runs: 5
