@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -69,4 +74,32 @@ jobs:
       if: env.BUILD_STATUS == 'success'
       with:
         name: ImmortalWrt-NanoPiM4
-        path: output/
+        path: output/*
+
+    - name: Create Release
+      if: env.BUILD_STATUS == 'success'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: "ImmortalWrt NanoPi M4 Build #${{ github.run_number }}"
+        body: |
+          Auto-built ImmortalWrt firmware for NanoPi M4
+          
+          Commit: ${{ github.sha }}
+          Workflow: ${{ github.workflow }}
+          Run: #${{ github.run_number }}
+          
+          ## Files
+          - `*.img.gz` - Firmware images for flashing
+          - `*.bin` - Binary files
+          
+          ## How to flash
+          1. Extract the `.img.gz` file
+          2. Use `dd` or Balena Etcher to write to SD card/eMMC
+          3. Insert into NanoPi M4 and boot
+        draft: false
+        prerelease: false
+        files: output/*
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
