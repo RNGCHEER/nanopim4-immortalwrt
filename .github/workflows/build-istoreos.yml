@@ -61,7 +61,7 @@ jobs:
     - name: Load custom feeds
       run: |
         mv $GITHUB_WORKSPACE/istoreos/rk33xx/${{ env.FEEDS_CONF }} openwrt/${{ env.FEEDS_CONF }}
-        chmod +x ${{ env.DIY_P1_SH }}
+        chmod +x $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P1_SH }}
         cd openwrt
         $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P1_SH }}
 
@@ -74,7 +74,7 @@ jobs:
     - name: Load custom configuration
       run: |
         mv $GITHUB_WORKSPACE/istoreos/rk33xx/${{ env.CONFIG_FILE }} openwrt/${{ env.CONFIG_FILE }}
-        chmod +x ${{ env.DIY_P2_SH }}
+        chmod +x $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P2_SH }}
         cd openwrt
         $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P2_SH }}
 
