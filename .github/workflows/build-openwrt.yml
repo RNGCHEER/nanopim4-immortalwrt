@@ -7,7 +7,6 @@ on:
       - master
   workflow_dispatch:
 
-# 添加权限声明，允许创建 Release
 permissions:
   contents: write
 
@@ -29,6 +28,11 @@ jobs:
         sudo swapoff -a
         sudo rm -f /swapfile
         df -h
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
 
     - name: Initialize build environment
       run: |
@@ -97,9 +101,7 @@ jobs:
       run: |
         rm -rf /tmp/firmware
         mkdir -p /tmp/firmware
-        # 查找所有固件文件
         find bin/targets/ -maxdepth 5 \( -name "*.bin" -o -name "*.img.gz" -o -name "*.img" -o -name "*.itb" \) -exec cp {} /tmp/firmware/ \; 2>/dev/null || true
-        # 列出找到的文件
         echo "=== Found firmware files ==="
         ls -la /tmp/firmware/
         echo "=== Files count ==="
