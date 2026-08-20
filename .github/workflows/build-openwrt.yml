@@ -1,0 +1,142 @@
+name: Build NanoPi M4 ImmortalWrt Firmware
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+# 添加权限声明，允许创建 Release
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Free up disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo docker image prune --all --force || true
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        df -h
+
+    - name: Initialize build environment
+      run: |
+        sudo timedatectl set-timezone "Asia/Shanghai"
+        sudo mkdir -p /workdir
+        sudo chown ${USER}:${GROUPS} /workdir
+        df -hT
+
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        git clone https://github.com/immortalwrt/immortalwrt.git -b master --depth 1
+        echo "REPO_NAME=immortalwrt" >> $GITHUB_ENV
+
+    - name: Update and install feeds
+      working-directory: /workdir/${{ env.REPO_NAME }}
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      working-directory: /workdir/${{ env.REPO_NAME }}
+      run: |
+        cat > .config << 'EOF'
+        CONFIG_TARGET_rockchip=y
+        CONFIG_TARGET_rockchip_armv8=y
+        CONFIG_TARGET_rockchip_armv8_DEVICE_nanopi-m4=y
+        CONFIG_PACKAGE_luci-app-argon-config=y
+        CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_luci-i18n-openclash-zh-cn=y
+        CONFIG_PACKAGE_luci-app-docker=y
+        CONFIG_PACKAGE_luci-i18n-docker-zh-cn=y
+        CONFIG_PACKAGE_luci-app-dockerman=y
+        CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
+        CONFIG_PACKAGE_kmod-usb-net-rndis=y
+        CONFIG_PACKAGE_kmod-usb-net-ipheth=y
+        CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+        CONFIG_PACKAGE_kmod-usb-serial-option=y
+        CONFIG_PACKAGE_luci-proto-qmi=y
+        CONFIG_PACKAGE_luci-app-qmi=y
+        CONFIG_PACKAGE_luci-i18n-qmi-zh-cn=y
+        CONFIG_PACKAGE_luci-app-usbmode=y
+        CONFIG_PACKAGE_luci-i18n-usbmode-zh-cn=y
+        CONFIG_PACKAGE_luci-app-mwan3=y
+        CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y
+        CONFIG_PACKAGE_luci-app-ttyd=y
+        CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+        CONFIG_PACKAGE_luci-app-turboacc=y
+        CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_PACKAGE_luci-theme-bootstrap=y
+        CONFIG_PACKAGE_luci-theme-design=y
+        EOF
+        make defconfig
+
+    - name: Generate firmware
+      working-directory: /workdir/${{ env.REPO_NAME }}
+      run: |
+        make download -j$(nproc)
+        make -j$(nproc) || make -j1 V=s
+
+    - name: Organize firmware files
+      working-directory: /workdir/${{ env.REPO_NAME }}
+      run: |
+        rm -rf /tmp/firmware
+        mkdir -p /tmp/firmware
+        # 查找所有固件文件
+        find bin/targets/ -maxdepth 5 \( -name "*.bin" -o -name "*.img.gz" -o -name "*.img" -o -name "*.itb" \) -exec cp {} /tmp/firmware/ \; 2>/dev/null || true
+        # 列出找到的文件
+        echo "=== Found firmware files ==="
+        ls -la /tmp/firmware/
+        echo "=== Files count ==="
+        ls /tmp/firmware/ | wc -l
+
+    - name: Upload firmware to GitHub Actions
+      uses: actions/upload-artifact@v4
+      with:
+        name: ImmortalWrt-NanoPi-M4-${{ github.run_id }}
+        path: /tmp/firmware/
+
+    - name: Generate release tag
+      id: tag
+      run: |
+        echo "RELEASE_TAG=build-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+        name: ImmortalWrt NanoPi M4 Build ${{ github.run_id }}
+        files: /tmp/firmware/*
+        body: |
+          ## ImmortalWrt NanoPi M4 Build
+          - Build ID: ${{ github.run_id }}
+          
+          ### Features
+          - 📡 4G/5G模组支持 (QMI/NCM/RNDIS)
+          - 📱 安卓USB网络共享支持
+          - 🐳 Docker支持
+          - 🎮 OpenClash支持
+          
+          ### Supported Devices
+          - FriendlyElec NanoPi M4
+          
+          ### Default Login
+          - 地址: 192.168.1.1
+          - 密码: password
