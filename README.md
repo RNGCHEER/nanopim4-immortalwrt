@@ -1,4 +1,4 @@
-# NanoPi M4 固件
+﻿# NanoPi M4 固件
 
 为 NanoPi M4 (Rockchip RK3399) 提供两种固件选择：
 
@@ -70,25 +70,15 @@
 
 ### 编译 ImmortalWrt
 
-`ash
-# 克隆仓库
-git clone https://github.com/RNGCHEER/nanopim4-immortalwrt.git
-cd nanopim4-immortalwrt
-
-# 启动编译
-act -j -W .github/workflows/build-openwrt.yml
-`
+    git clone https://github.com/RNGCHEER/nanopim4-immortalwrt.git
+    cd nanopim4-immortalwrt
+    act -j -W .github/workflows/build-openwrt.yml
 
 ### 编译 iStore OS
 
-`ash
-# 克隆仓库
-git clone https://github.com/RNGCHEER/nanopim4-immortalwrt.git
-cd nanopim4-immortalwrt
-
-# 启动编译
-act -j -W .github/workflows/build-istoreos.yml
-`
+    git clone https://github.com/RNGCHEER/nanopim4-immortalwrt.git
+    cd nanopim4-immortalwrt
+    act -j -W .github/workflows/build-istoreos.yml
 
 ## 📝 更新日志
 
@@ -115,4 +105,3 @@ act -j -W .github/workflows/build-istoreos.yml
 - [iStoreOS](https://github.com/istoreos/istoreos)
 - [OpenWrt](https://openwrt.org/)
 - [FriendlyElec](https://www.friendlyelec.com/)
-
