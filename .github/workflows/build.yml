@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for NanoPi M4
+﻿name: Build ImmortalWrt for NanoPi M4
 
 on:
   push:
@@ -33,7 +33,16 @@ jobs:
     - name: Initialize ImmortalWrt
       run: |
         sudo apt-get update
-        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
+        # Install Go for OpenClash/Passwall
+        wget -q https://go.dev/dl/go1.22.4.linux-amd64.tar.gz
+        sudo tar -C /usr/local -xzf go1.22.4.linux-amd64.tar.gz
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> $HOME/.bashrc
+        echo 'export GOPATH=$HOME/go' >> $HOME/.bashrc
+        echo 'export PATH=$PATH:$GOPATH/bin' >> $HOME/.bashrc
+        export PATH=$PATH:/usr/local/go/bin
+        export GOPATH=$HOME/go
+        go version
         # openwrt-24.10 branch -> official 6.6.x LTS kernel (KERNEL_PATCHVER=6.6)
         git clone -b openwrt-24.10 --depth 1 https://github.com/immortalwrt/immortalwrt.git
         cd immortalwrt
@@ -66,40 +75,64 @@ jobs:
       run: |
         cd immortalwrt
         mkdir -p ../output
+        # Copy firmware images
         find bin/targets -name "*.img.gz" -exec cp {} ../output/ \;
         find bin/targets -name "*.bin" -exec cp {} ../output/ \;
+        find bin/targets -name "*.img" -exec cp {} ../output/ \;
+        # Copy IPK packages
+        mkdir -p ../output/packages
+        find bin/packages -name "*.ipk" -exec cp {} ../output/packages/ \; 2>/dev/null || true
+        echo "=== Output files ==="
+        ls -la ../output/
+        ls -la ../output/packages/ 2>/dev/null | head -20
 
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       if: env.BUILD_STATUS == 'success'
       with:
-        name: ImmortalWrt-NanoPiM4
-        path: output/*
+        name: ImmortalWrt-NanoPiM4-${{ github.run_id }}
+        path: output/
+
+    - name: Generate release tag
+      id: tag
+      if: env.BUILD_STATUS == 'success'
+      run: |
+        echo "RELEASE_TAG=build-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
     - name: Create Release
       if: env.BUILD_STATUS == 'success'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.run_number }}
-        name: "ImmortalWrt NanoPi M4 Build #${{ github.run_number }}"
+        tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+        name: "ImmortalWrt NanoPi M4 Build ${{ github.run_id }}"
         body: |
-          Auto-built ImmortalWrt firmware for NanoPi M4
+          ## ImmortalWrt NanoPi M4 Build
           
-          Commit: ${{ github.sha }}
-          Workflow: ${{ github.workflow }}
-          Run: #${{ github.run_number }}
+          ### Features
+          - Docker 支持
+          - OpenClash (科学上网)
+          - PassWall (网络代理)
+          - 4G/5G 模组支持
+          - Multi-WAN 负载均衡
           
-          ## Files
-          - `*.img.gz` - Firmware images for flashing
-          - `*.bin` - Binary files
+          ### Supported Devices
+          - FriendlyElec NanoPi M4
           
-          ## How to flash
-          1. Extract the `.img.gz` file
-          2. Use `dd` or Balena Etcher to write to SD card/eMMC
-          3. Insert into NanoPi M4 and boot
+          ### Default Login
+          - 地址: 192.168.1.1
+          - 用户名: root
+          - 密码: password
+          
+          ### Files
+          - `*.img.gz` / `*.img` - 固件镜像 (用于 dd 或 Etcher 写入 TF卡/eMMC)
+          - `packages/*.ipk` - 软件包
+        files: |
+          output/*.img.gz
+          output/*.img
+          output/*.bin
+          output/packages/*.ipk
         draft: false
         prerelease: false
-        files: output/*
         fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

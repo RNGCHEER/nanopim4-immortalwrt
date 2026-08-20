@@ -4,23 +4,11 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+      - master
   workflow_dispatch:
 
 permissions:
   contents: write
-
-env:
-  REPO_URL: https://github.com/istoreos/istoreos
-  REPO_BRANCH: istoreos-22.03
-  FEEDS_CONF: feeds.conf
-  CONFIG_FILE: .config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
 
 jobs:
   build:
@@ -31,139 +19,128 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Free up disk space
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap-storage: true
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo docker image prune --all --force || true
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        df -h
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
 
     - name: Initialize build environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2 python2.7 python3 python3-pyelftools python3-setuptools libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo timedatectl set-timezone Asia/Shanghai
+        sudo timedatectl set-timezone "Asia/Shanghai"
         sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
+        sudo chown ${USER}:${GROUPS} /workdir
+        df -hT
 
     - name: Clone source code
       working-directory: /workdir
       run: |
-        git clone ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} --depth 1 openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        git clone https://github.com/immortalwrt/immortalwrt.git -b master --depth 1
+        echo "REPO_NAME=immortalwrt" >> $GITHUB_ENV
 
-    - name: Load custom feeds
+    - name: Update and install feeds
+      working-directory: /workdir/${{ env.REPO_NAME }}
       run: |
-        mv $GITHUB_WORKSPACE/istoreos/rk33xx/${{ env.FEEDS_CONF }} openwrt/${{ env.FEEDS_CONF }}
-        chmod +x $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P1_SH }}
-        cd openwrt
-        $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P1_SH }}
-
-    - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
     - name: Load custom configuration
+      working-directory: /workdir/${{ env.REPO_NAME }}
       run: |
-        mv $GITHUB_WORKSPACE/istoreos/rk33xx/${{ env.CONFIG_FILE }} openwrt/${{ env.CONFIG_FILE }}
-        chmod +x $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P2_SH }}
-        cd openwrt
-        $GITHUB_WORKSPACE/istoreos/${{ env.DIY_P2_SH }}
-
-    - name: Download packages
-      id: package
-      run: |
-        cd openwrt
+        cat > .config << 'EOF'
+        CONFIG_TARGET_rockchip=y
+        CONFIG_TARGET_rockchip_armv8=y
+        CONFIG_TARGET_rockchip_armv8_DEVICE_nanopi-m4=y
+        CONFIG_PACKAGE_luci-app-argon-config=y
+        CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_luci-i18n-openclash-zh-cn=y
+        CONFIG_PACKAGE_luci-app-docker=y
+        CONFIG_PACKAGE_luci-i18n-docker-zh-cn=y
+        CONFIG_PACKAGE_luci-app-dockerman=y
+        CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
+        CONFIG_PACKAGE_kmod-usb-net-rndis=y
+        CONFIG_PACKAGE_kmod-usb-net-ipheth=y
+        CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+        CONFIG_PACKAGE_kmod-usb-serial-option=y
+        CONFIG_PACKAGE_luci-proto-qmi=y
+        CONFIG_PACKAGE_luci-app-qmi=y
+        CONFIG_PACKAGE_luci-i18n-qmi-zh-cn=y
+        CONFIG_PACKAGE_luci-app-usbmode=y
+        CONFIG_PACKAGE_luci-i18n-usbmode-zh-cn=y
+        CONFIG_PACKAGE_luci-app-mwan3=y
+        CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y
+        CONFIG_PACKAGE_luci-app-ttyd=y
+        CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+        CONFIG_PACKAGE_luci-app-turboacc=y
+        CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_PACKAGE_luci-theme-bootstrap=y
+        CONFIG_PACKAGE_luci-theme-design=y
+        CONFIG_TARGET_ROOTFS_PARTSIZE=256
+        CONFIG_TARGET_KERNEL_PARTSIZE=16
+        EOF
         make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
 
-    - name: Compile firmware
-      id: compile
+    - name: Generate firmware
+      working-directory: /workdir/${{ env.REPO_NAME }}
       run: |
-        cd openwrt
-        echo "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Check disk space
-      if: (!cancelled())
-      run: df -hT
+        make download -j$(nproc)
+        make -j$(nproc) || make -j1 V=s
 
     - name: Organize firmware files
-      id: organize
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      working-directory: /workdir/${{ env.REPO_NAME }}
       run: |
-        cd openwrt
-        ls -la bin/targets/
-        FIRMWARE_DIR=$(find bin/targets -type d -maxdepth 2 | head -1)
-        if [ -z "$FIRMWARE_DIR" ]; then
-          echo "ERROR: No firmware directory found!"
-          exit 1
-        fi
-        cd "$FIRMWARE_DIR"
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "Found firmware files:"
-        ls -la
-        echo "status=success" >> $GITHUB_OUTPUT
+        rm -rf /tmp/firmware
+        mkdir -p /tmp/firmware
+        find bin/targets/ -maxdepth 5 \( -name "*.bin" -o -name "*.img.gz" -o -name "*.img" -o -name "*.itb" \) -exec cp {} /tmp/firmware/ \; 2>/dev/null || true
+        echo "=== Found firmware files ==="
+        ls -la /tmp/firmware/
+        echo "=== Files count ==="
+        ls /tmp/firmware/ | wc -l
 
     - name: Upload firmware to GitHub Actions
       uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: iStoreOS-NanoPiM4${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
+        name: ImmortalWrt-NanoPi-M4-${{ github.run_id }}
+        path: /tmp/firmware/
 
     - name: Generate release tag
       id: tag
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H.%M")" >> $GITHUB_OUTPUT
-        echo "status=success" >> $GITHUB_OUTPUT
+        echo "RELEASE_TAG=build-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      with:
-        tag_name: iStoreOS-${{ steps.tag.outputs.release_tag }}
-        name: iStore OS NanoPi M4 Build
-        body: |
-          ## iStore OS for NanoPi M4
-          
-          **架构**: Rockchip RK3399 (NanoPi M4)
-          
-          **源码**: ${{ env.REPO_URL }}
-          
-          **分支**: ${{ env.REPO_BRANCH }}
-          
-          **管理地址**: 192.168.1.1
-          
-          **用户名**: root
-          
-          **密码**: password
-          
-          ### 支持的设备
-          - FriendlyElec NanoPi M4
-          
-          ### 主要功能
-          - iStore 应用商店
-          - Docker 支持
-          - NAS 功能 (SMB/NFS)
-          - 4G/5G 模组支持
-        files: ${{ env.FIRMWARE }}/*
-        draft: false
-        prerelease: false
-        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+        name: ImmortalWrt NanoPi M4 Build ${{ github.run_id }}
+        files: /tmp/firmware/*
+        body: |
+          ## ImmortalWrt NanoPi M4 Build
+          - Build ID: ${{ github.run_id }}
+          
+          ### Features
+          - 📡 4G/5G模组支持 (QMI/NCM/RNDIS)
+          - 📱 安卓USB网络共享支持
+          - 🐳 Docker支持
+          - 🎮 OpenClash支持
+          
+          ### Supported Devices
+          - FriendlyElec NanoPi M4
+          
+          ### Default Login
+          - 地址: 192.168.1.1
+          - 密码: password
