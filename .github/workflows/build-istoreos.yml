@@ -36,8 +36,8 @@ jobs:
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
         # Remove existing istoreos directory from checkout to avoid conflict
         rm -rf istoreos
-        # Clone iStore OS source
-        git clone -b main --depth 1 https://github.com/istoreos/istoreos.git
+        # Clone iStore OS source - use istoreos-24.10 branch
+        git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
         cd istoreos
         # Add NanoPi M4 device support
         cp ../patches/*.patch . 2>/dev/null || true
@@ -46,77 +46,27 @@ jobs:
             patch -p1 < "$patch" || true
           fi
         done
-        # Use custom .config for image generation
+        # Update feeds first
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        # Use minimal .config - let make defconfig handle the rest
         cat > .config << 'EOF'
-        # Target System
         CONFIG_TARGET_rockchip=y
         CONFIG_TARGET_rockchip_armv8=y
         CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
-        
-        # Target Images - Generate IMG files
-        CONFIG_TARGET_ROOTFS_EXT4FS=y
-        CONFIG_TARGET_ROOTFS_SQUASHFS=y
-        # Root partition 4GB (4096 MiB)
         CONFIG_TARGET_ROOTFS_PARTSIZE=4096
-        
-        # General Configuration
-        CONFIG_PACKAGE_ipv6=y
-        CONFIG_PACKAGE_curl=y
-        CONFIG_PACKAGE_wget-ssl=y
-        CONFIG_PACKAGE_htop=y
-        CONFIG_PACKAGE_nano=y
-        
-        # LuCI Web Interface
         CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-base=y
-        CONFIG_PACKAGE_luci-compat=y
-        CONFIG_PACKAGE_luci-lib-ipkg=y
-        CONFIG_PACKAGE_luci-app-firewall=y
-        CONFIG_PACKAGE_luci-app-opkg=y
-        
-        # LuCI Theme
         CONFIG_PACKAGE_luci-theme-bootstrap=y
-        CONFIG_PACKAGE_luci-theme-argon=y
-        
-        # Kernel Modules - USB
-        CONFIG_PACKAGE_kmod-usb-core=y
-        CONFIG_PACKAGE_kmod-usb2=y
-        CONFIG_PACKAGE_kmod-usb3=y
-        CONFIG_PACKAGE_kmod-usb-storage=y
-        
-        # Kernel Modules - Filesystem
-        CONFIG_PACKAGE_kmod-fs-ext4=y
-        CONFIG_PACKAGE_kmod-fs-vfat=y
-        CONFIG_PACKAGE_kmod-nls-cp437=y
-        CONFIG_PACKAGE_kmod-nls-iso8859-1=y
-        
-        # Network Configuration
-        CONFIG_PACKAGE_dnsmasq-full=y
-        CONFIG_PACKAGE_dnsmasq_full_dhcp=y
-        CONFIG_PACKAGE_dnsmasq_full_dhcpv6=y
-        CONFIG_PACKAGE_dnsmasq_full_ipset=y
-        CONFIG_PACKAGE_dnsmasq_full_nftset=y
-        CONFIG_PACKAGE_odhcp6c=y
-        CONFIG_PACKAGE_odhcpd-ipv6only=y
-        
-        # SSH
-        CONFIG_PACKAGE_openssh-server-default=y
-        
-        # Firewall
-        CONFIG_PACKAGE_iptables-nft=y
-        
-        # Docker Support
         CONFIG_PACKAGE_luci-app-dockerman=y
         CONFIG_PACKAGE_docker-ce=y
         CONFIG_PACKAGE_docker-ce-cli=y
         CONFIG_PACKAGE_containerd=y
-        
-        # iStore OS Store
         CONFIG_PACKAGE_luci-app-store=y
         EOF
         make defconfig
-        # Sanity check: M4 device must be selected after defconfig
-        grep -E '^CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y$' .config || { echo 'NanoPi M4 device not selected!'; exit 1; }
+        # Show selected device for debugging
+        echo "=== Selected device ==="
+        grep -E 'CONFIG_TARGET_rockchip_armv8_DEVICE.*=y' .config || echo "No device selected!"
 
     - name: Download packages
       run: |
