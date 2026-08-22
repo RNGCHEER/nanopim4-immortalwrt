@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-      - master
+    tags:
+      - 'iStoreOS-*'
   workflow_dispatch:
 
 permissions:
@@ -15,132 +16,176 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout repository
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Free up disk space
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo docker image prune --all --force || true
-        sudo swapoff -a
-        sudo rm -f /swapfile
-        df -h
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
 
-    - name: Install build dependencies
+    - name: Initialize iStore OS
       run: |
         sudo apt-get update
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
-
-    - name: Initialize build environment
-      run: |
-        sudo timedatectl set-timezone "Asia/Shanghai"
-        sudo mkdir -p /workdir
-        sudo chown ${USER}:${GROUPS} /workdir
-        df -hT
-
-    - name: Clone source code
-      working-directory: /workdir
-      run: |
-        git clone https://github.com/immortalwrt/immortalwrt.git -b master --depth 1
-        echo "REPO_NAME=immortalwrt" >> $GITHUB_ENV
-
-    - name: Update and install feeds
-      working-directory: /workdir/${{ env.REPO_NAME }}
-      run: |
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
-
-    - name: Load custom configuration
-      working-directory: /workdir/${{ env.REPO_NAME }}
-      run: |
+        # Clone iStore OS source
+        git clone -b main --depth 1 https://github.com/istoreos/istoreos.git
+        cd istoreos
+        # Add NanoPi M4 device support
+        cp ../patches/*.patch . 2>/dev/null || true
+        for patch in *.patch; do
+          if [ -f "$patch" ]; then
+            patch -p1 < "$patch" || true
+          fi
+        done
+        # Use custom .config for image generation
         cat > .config << 'EOF'
+        # Target System
         CONFIG_TARGET_rockchip=y
         CONFIG_TARGET_rockchip_armv8=y
-        CONFIG_TARGET_rockchip_armv8_DEVICE_nanopi-m4=y
-        CONFIG_PACKAGE_luci-app-argon-config=y
-        CONFIG_PACKAGE_luci-app-openclash=y
-        CONFIG_PACKAGE_luci-i18n-openclash-zh-cn=y
-        CONFIG_PACKAGE_luci-app-docker=y
-        CONFIG_PACKAGE_luci-i18n-docker-zh-cn=y
-        CONFIG_PACKAGE_luci-app-dockerman=y
-        CONFIG_PACKAGE_luci-i18n-dockerman-zh-cn=y
-        CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-        CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
-        CONFIG_PACKAGE_kmod-usb-net-rndis=y
-        CONFIG_PACKAGE_kmod-usb-net-ipheth=y
-        CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-        CONFIG_PACKAGE_kmod-usb-serial-option=y
-        CONFIG_PACKAGE_luci-proto-qmi=y
-        CONFIG_PACKAGE_luci-app-qmi=y
-        CONFIG_PACKAGE_luci-i18n-qmi-zh-cn=y
-        CONFIG_PACKAGE_luci-app-usbmode=y
-        CONFIG_PACKAGE_luci-i18n-usbmode-zh-cn=y
-        CONFIG_PACKAGE_luci-app-mwan3=y
-        CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y
-        CONFIG_PACKAGE_luci-app-ttyd=y
-        CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
-        CONFIG_PACKAGE_luci-app-turboacc=y
-        CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y
-        CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
+        
+        # Target Images - Generate IMG files
+        CONFIG_TARGET_ROOTFS_EXT4FS=y
+        CONFIG_TARGET_ROOTFS_SQUASHFS=y
+        # Root partition 4GB (4096 MiB)
+        CONFIG_TARGET_ROOTFS_PARTSIZE=4096
+        
+        # General Configuration
+        CONFIG_PACKAGE_ipv6=y
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_wget-ssl=y
+        CONFIG_PACKAGE_htop=y
+        CONFIG_PACKAGE_nano=y
+        
+        # LuCI Web Interface
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-compat=y
+        CONFIG_PACKAGE_luci-lib-ipkg=y
+        CONFIG_PACKAGE_luci-app-firewall=y
+        CONFIG_PACKAGE_luci-app-opkg=y
+        
+        # LuCI Theme
         CONFIG_PACKAGE_luci-theme-bootstrap=y
-        CONFIG_PACKAGE_luci-theme-design=y
-        CONFIG_TARGET_ROOTFS_PARTSIZE=256
-        CONFIG_TARGET_KERNEL_PARTSIZE=16
+        CONFIG_PACKAGE_luci-theme-argon=y
+        
+        # Kernel Modules - USB
+        CONFIG_PACKAGE_kmod-usb-core=y
+        CONFIG_PACKAGE_kmod-usb2=y
+        CONFIG_PACKAGE_kmod-usb3=y
+        CONFIG_PACKAGE_kmod-usb-storage=y
+        
+        # Kernel Modules - Filesystem
+        CONFIG_PACKAGE_kmod-fs-ext4=y
+        CONFIG_PACKAGE_kmod-fs-vfat=y
+        CONFIG_PACKAGE_kmod-nls-cp437=y
+        CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+        
+        # Network Configuration
+        CONFIG_PACKAGE_dnsmasq-full=y
+        CONFIG_PACKAGE_dnsmasq_full_dhcp=y
+        CONFIG_PACKAGE_dnsmasq_full_dhcpv6=y
+        CONFIG_PACKAGE_dnsmasq_full_ipset=y
+        CONFIG_PACKAGE_dnsmasq_full_nftset=y
+        CONFIG_PACKAGE_odhcp6c=y
+        CONFIG_PACKAGE_odhcpd-ipv6only=y
+        
+        # SSH
+        CONFIG_PACKAGE_openssh-server-default=y
+        
+        # Firewall
+        CONFIG_PACKAGE_iptables-nft=y
+        
+        # Docker Support
+        CONFIG_PACKAGE_luci-app-dockerman=y
+        CONFIG_PACKAGE_docker-ce=y
+        CONFIG_PACKAGE_docker-ce-cli=y
+        CONFIG_PACKAGE_containerd=y
+        
+        # iStore OS Store
+        CONFIG_PACKAGE_luci-app-store=y
         EOF
         make defconfig
+        # Sanity check: M4 device must be selected after defconfig
+        grep -E '^CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y$' .config || { echo 'NanoPi M4 device not selected!'; exit 1; }
 
-    - name: Generate firmware
-      working-directory: /workdir/${{ env.REPO_NAME }}
+    - name: Download packages
       run: |
-        make download -j$(nproc)
+        cd istoreos
+        make download -j8
+
+    - name: Compile firmware
+      run: |
+        cd istoreos
         make -j$(nproc) || make -j1 V=s
+        echo BUILD_STATUS=success >> $GITHUB_ENV
 
-    - name: Organize firmware files
-      working-directory: /workdir/${{ env.REPO_NAME }}
+    - name: Organize files
+      if: env.BUILD_STATUS == 'success'
       run: |
-        rm -rf /tmp/firmware
-        mkdir -p /tmp/firmware
-        find bin/targets/ -maxdepth 5 \( -name "*.bin" -o -name "*.img.gz" -o -name "*.img" -o -name "*.itb" \) -exec cp {} /tmp/firmware/ \; 2>/dev/null || true
-        echo "=== Found firmware files ==="
-        ls -la /tmp/firmware/
-        echo "=== Files count ==="
-        ls /tmp/firmware/ | wc -l
+        cd istoreos
+        mkdir -p ../output
+        # Copy firmware images (IMG files for TF card/eMMC)
+        find bin/targets -name "*.img.gz" -exec cp {} ../output/ \;
+        find bin/targets -name "*.img" -exec cp {} ../output/ \;
+        find bin/targets -name "*.bin" -exec cp {} ../output/ \;
+        find bin/targets -name "*.itb" -exec cp {} ../output/ \;
+        echo "=== Output files ==="
+        ls -la ../output/
 
-    - name: Upload firmware to GitHub Actions
+    - name: Upload firmware
       uses: actions/upload-artifact@v4
+      if: env.BUILD_STATUS == 'success'
       with:
-        name: ImmortalWrt-NanoPi-M4-${{ github.run_id }}
-        path: /tmp/firmware/
+        name: iStoreOS-NanoPiM4-${{ github.run_id }}
+        path: output/
 
     - name: Generate release tag
       id: tag
+      if: env.BUILD_STATUS == 'success'
       run: |
-        echo "RELEASE_TAG=build-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+        echo "RELEASE_TAG=iStoreOS-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
-    - name: Upload firmware to release
+    - name: Create Release
+      if: env.BUILD_STATUS == 'success'
       uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
-        name: ImmortalWrt NanoPi M4 Build ${{ github.run_id }}
-        files: /tmp/firmware/*
+        name: "iStore OS NanoPi M4 Build ${{ github.run_id }}"
         body: |
-          ## ImmortalWrt NanoPi M4 Build
-          - Build ID: ${{ github.run_id }}
+          ## iStore OS NanoPi M4 Build
           
           ### Features
-          - 📡 4G/5G模组支持 (QMI/NCM/RNDIS)
-          - 📱 安卓USB网络共享支持
-          - 🐳 Docker支持
-          - 🎮 OpenClash支持
+          - Docker 支持
+          - iStore 应用商店
+          - 4G/5G 模组支持
+          - SMB/NFS 文件共享
           
           ### Supported Devices
           - FriendlyElec NanoPi M4
           
           ### Default Login
           - 地址: 192.168.1.1
+          - 用户名: root
           - 密码: password
+          
+          ### Files
+          - `*.img.gz` / `*.img` - 固件镜像 (用于 dd 或 Etcher 写入 TF卡/eMMC)
+          - `*.bin` / `*.itb` - 其他固件文件
+        files: |
+          output/*.img.gz
+          output/*.img
+          output/*.bin
+          output/*.itb
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
