@@ -30,66 +30,57 @@ jobs:
         docker-images: true
         swap-storage: true
 
-    - name: Initialize iStore OS
+    - name: Clone iStore OS
       run: |
         sudo apt-get update
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
         rm -rf istoreos
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
-        cd istoreos
 
-        # Check if NanoPi M4 already exists
-        if grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
-          echo "NanoPi M4 device already exists in iStore OS!"
-        else
-          echo "Adding NanoPi M4 device support..."
-          
-          # Add NanoPi M4 device profile after nanopc-t4
-          # NanoPi M4 uses pine64-bin boot flow (same as NanoPC-T4)
-          sed -i '/TARGET_DEVICES += friendlyarm_nanopc-t4/a\
-\
-define Device/friendlyarm_nanopi-m4\
-  DEVICE_VENDOR := FriendlyARM\
-  DEVICE_MODEL := NanoPi M4\
-  SOC := rk3399\
-  BOOT_FLOW := pine64-bin\
-endef\
-TARGET_DEVICES += friendlyarm_nanopi-m4' target/linux/rockchip/image/armv8.mk
-          
-          echo "=== Device added to armv8.mk ==="
-          grep -A8 "nanopi-m4" target/linux/rockchip/image/armv8.mk
-        fi
+    - name: Add NanoPi M4 device support
+      working-directory: istoreos
+      run: |
+        # Add device profile to armv8.mk
+        if ! grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
+          echo "Adding NanoPi M4 device..."
+          cat >> target/linux/rockchip/image/armv8.mk << 'DEVEOF'
 
-        # Check U-Boot
-        if grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
-          echo "NanoPi M4 U-Boot already exists!"
-        else
-          echo "Adding NanoPi M4 U-Boot..."
-          
-          # Find nanopc-t4-rk3399 U-Boot definition and add after it
-          sed -i '/nanopc-t4-rk3399/,/endef/{
-            /endef/a\
-\
-define U-Boot/nanopi-m4-rk3399\
-  $(U-Boot/rk3399/Default)\
-  NAME := NanoPi M4\
-  BUILD_DEVICES := friendlyarm_nanopi-m4\
+define Device/friendlyarm_nanopi-m4
+  DEVICE_VENDOR := FriendlyARM
+  DEVICE_MODEL := NanoPi M4
+  SOC := rk3399
+  BOOT_FLOW := pine64-bin
 endef
-          }' package/boot/uboot-rockchip/Makefile
-          
-          # Add to UBOOT_TARGETS list
-          sed -i 's/nanopc-t4-rk3399 \\/nanopc-t4-rk3399 \\\n  nanopi-m4-rk3399 \\/' package/boot/uboot-rockchip/Makefile
-          
-          echo "=== U-Boot added ==="
-          grep -A8 "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile | head -20
+TARGET_DEVICES += friendlyarm_nanopi-m4
+DEVEOF
         fi
 
-        # Update feeds
+        # Add U-Boot target
+        if ! grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
+          echo "Adding NanoPi M4 U-Boot..."
+          cat >> package/boot/uboot-rockchip/Makefile << 'UBOOTEOF'
+
+define U-Boot/nanopi-m4-rk3399
+  $(U-Boot/rk3399/Default)
+  NAME := NanoPi M4
+  BUILD_DEVICES := friendlyarm_nanopi-m4
+endef
+UBOOTEOF
+          # Add to UBOOT_TARGETS
+          sed -i 's/nanopc-t4-rk3399 \\/nanopc-t4-rk3399 \\\n  nanopi-m4-rk3399 \\/' package/boot/uboot-rockchip/Makefile
+        fi
+
+        echo "=== Verify device added ==="
+        grep -A8 "nanopi-m4" target/linux/rockchip/image/armv8.mk
+        grep -A6 "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile
+
+    - name: Update feeds and configure
+      working-directory: istoreos
+      run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
-        # Create .config with NanoPi M4
-        cat > .config << 'EOF'
+
+        cat > .config << 'CONFIGEOF'
         CONFIG_TARGET_rockchip=y
         CONFIG_TARGET_rockchip_armv8=y
         CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
@@ -103,27 +94,24 @@ endef
         CONFIG_PACKAGE_docker-ce-cli=y
         CONFIG_PACKAGE_containerd=y
         CONFIG_PACKAGE_luci-app-store=y
-        EOF
+        CONFIGEOF
         make defconfig
-        
-        echo "=== Final device selection ==="
-        grep "DEVICE_friendlyarm" .config || echo "No FriendlyARM device selected!"
+        grep "DEVICE_friendlyarm" .config || echo "WARNING: No device selected!"
 
     - name: Download packages
-      run: |
-        cd istoreos
-        make download -j8
+      working-directory: istoreos
+      run: make download -j8
 
     - name: Compile firmware
+      working-directory: istoreos
       run: |
-        cd istoreos
         make -j$(nproc) || make -j1 V=s
         echo BUILD_STATUS=success >> $GITHUB_ENV
 
     - name: Organize files
       if: env.BUILD_STATUS == 'success'
+      working-directory: istoreos
       run: |
-        cd istoreos
         mkdir -p ../output
         find bin/targets -name "*.img.gz" -exec cp {} ../output/ \;
         find bin/targets -name "*.img" -exec cp {} ../output/ \;
@@ -142,8 +130,7 @@ endef
     - name: Generate release tag
       id: tag
       if: env.BUILD_STATUS == 'success'
-      run: |
-        echo "RELEASE_TAG=iStoreOS-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+      run: echo "RELEASE_TAG=iStoreOS-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
     - name: Create Release
       if: env.BUILD_STATUS == 'success'
@@ -153,23 +140,14 @@ endef
         name: "iStore OS NanoPi M4 Build ${{ github.run_id }}"
         body: |
           ## iStore OS NanoPi M4 Build
-          
           ### Features
           - Docker 支持
           - iStore 应用商店
-          - 4G/5G 模组支持
-          - SMB/NFS 文件共享
-          
-          ### Supported Devices
-          - FriendlyElec NanoPi M4
-          
           ### Default Login
           - 地址: 192.168.1.1
-          - 用户名: root
           - 密码: password
-          
           ### Files
-          - `*.img.gz` / `*.img` - 固件镜像 (用于 dd 或 Etcher 写入 TF卡/eMMC)
+          - `*.img.gz` / `*.img` - 固件镜像 (写入 TF卡/eMMC)
         files: |
           output/*.img.gz
           output/*.img
