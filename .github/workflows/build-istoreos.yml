@@ -34,26 +34,67 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
-        # Remove existing istoreos directory from checkout to avoid conflict
         rm -rf istoreos
-        # Clone iStore OS source - use istoreos-24.10 branch
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
         cd istoreos
-        # Add NanoPi M4 device support
-        cp ../patches/*.patch . 2>/dev/null || true
-        for patch in *.patch; do
-          if [ -f "$patch" ]; then
-            patch -p1 < "$patch" || true
-          fi
-        done
-        # Update feeds first
+
+        # Check if NanoPi M4 already exists
+        if grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
+          echo "NanoPi M4 device already exists in iStore OS!"
+        else
+          echo "Adding NanoPi M4 device support..."
+          
+          # Add NanoPi M4 device profile after nanopc-t4
+          # NanoPi M4 uses pine64-bin boot flow (same as NanoPC-T4)
+          sed -i '/TARGET_DEVICES += friendlyarm_nanopc-t4/a\
+\
+define Device/friendlyarm_nanopi-m4\
+  DEVICE_VENDOR := FriendlyARM\
+  DEVICE_MODEL := NanoPi M4\
+  SOC := rk3399\
+  BOOT_FLOW := pine64-bin\
+endef\
+TARGET_DEVICES += friendlyarm_nanopi-m4' target/linux/rockchip/image/armv8.mk
+          
+          echo "=== Device added to armv8.mk ==="
+          grep -A8 "nanopi-m4" target/linux/rockchip/image/armv8.mk
+        fi
+
+        # Check U-Boot
+        if grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
+          echo "NanoPi M4 U-Boot already exists!"
+        else
+          echo "Adding NanoPi M4 U-Boot..."
+          
+          # Find nanopc-t4-rk3399 U-Boot definition and add after it
+          sed -i '/nanopc-t4-rk3399/,/endef/{
+            /endef/a\
+\
+define U-Boot/nanopi-m4-rk3399\
+  $(U-Boot/rk3399/Default)\
+  NAME := NanoPi M4\
+  BUILD_DEVICES := friendlyarm_nanopi-m4\
+endef
+          }' package/boot/uboot-rockchip/Makefile
+          
+          # Add to UBOOT_TARGETS list
+          sed -i 's/nanopc-t4-rk3399 \\/nanopc-t4-rk3399 \\\n  nanopi-m4-rk3399 \\/' package/boot/uboot-rockchip/Makefile
+          
+          echo "=== U-Boot added ==="
+          grep -A8 "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile | head -20
+        fi
+
+        # Update feeds
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        # Use minimal .config - let make defconfig handle the rest
+        
+        # Create .config with NanoPi M4
         cat > .config << 'EOF'
         CONFIG_TARGET_rockchip=y
         CONFIG_TARGET_rockchip_armv8=y
         CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
+        CONFIG_TARGET_ROOTFS_EXT4FS=y
+        CONFIG_TARGET_ROOTFS_SQUASHFS=y
         CONFIG_TARGET_ROOTFS_PARTSIZE=4096
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-bootstrap=y
@@ -64,9 +105,9 @@ jobs:
         CONFIG_PACKAGE_luci-app-store=y
         EOF
         make defconfig
-        # Show selected device for debugging
-        echo "=== Selected device ==="
-        grep -E 'CONFIG_TARGET_rockchip_armv8_DEVICE.*=y' .config || echo "No device selected!"
+        
+        echo "=== Final device selection ==="
+        grep "DEVICE_friendlyarm" .config || echo "No FriendlyARM device selected!"
 
     - name: Download packages
       run: |
@@ -84,7 +125,6 @@ jobs:
       run: |
         cd istoreos
         mkdir -p ../output
-        # Copy firmware images (IMG files for TF card/eMMC)
         find bin/targets -name "*.img.gz" -exec cp {} ../output/ \;
         find bin/targets -name "*.img" -exec cp {} ../output/ \;
         find bin/targets -name "*.bin" -exec cp {} ../output/ \;
@@ -130,7 +170,6 @@ jobs:
           
           ### Files
           - `*.img.gz` / `*.img` - 固件镜像 (用于 dd 或 Etcher 写入 TF卡/eMMC)
-          - `*.bin` / `*.itb` - 其他固件文件
         files: |
           output/*.img.gz
           output/*.img
