@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - 'iStoreOS-*'
+      - "iStoreOS-*"
   workflow_dispatch:
 
 permissions:
@@ -37,64 +37,46 @@ jobs:
         rm -rf istoreos
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
 
-    - name: Add NanoPi M4 device support
+    - name: Patch iStore OS for NanoPi M4
       working-directory: istoreos
       run: |
-        # Add device profile to armv8.mk
-        if ! grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
+        if grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
+          echo "NanoPi M4 device already exists"
+        else
           echo "Adding NanoPi M4 device..."
-          cat >> target/linux/rockchip/image/armv8.mk << 'DEVEOF'
-
-define Device/friendlyarm_nanopi-m4
-  DEVICE_VENDOR := FriendlyARM
-  DEVICE_MODEL := NanoPi M4
-  SOC := rk3399
-  BOOT_FLOW := pine64-bin
-endef
-TARGET_DEVICES += friendlyarm_nanopi-m4
-DEVEOF
+          printf '\ndefine Device/friendlyarm_nanopi-m4\n  DEVICE_VENDOR := FriendlyARM\n  DEVICE_MODEL := NanoPi M4\n  SOC := rk3399\n  BOOT_FLOW := pine64-bin\nendef\nTARGET_DEVICES += friendlyarm_nanopi-m4\n' >> target/linux/rockchip/image/armv8.mk
         fi
 
-        # Add U-Boot target
-        if ! grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
+        if grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
+          echo "NanoPi M4 U-Boot already exists"
+        else
           echo "Adding NanoPi M4 U-Boot..."
-          cat >> package/boot/uboot-rockchip/Makefile << 'UBOOTEOF'
-
-define U-Boot/nanopi-m4-rk3399
-  $(U-Boot/rk3399/Default)
-  NAME := NanoPi M4
-  BUILD_DEVICES := friendlyarm_nanopi-m4
-endef
-UBOOTEOF
-          # Add to UBOOT_TARGETS
+          printf '\ndefine U-Boot/nanopi-m4-rk3399\n  $(U-Boot/rk3399/Default)\n  NAME := NanoPi M4\n  BUILD_DEVICES := friendlyarm_nanopi-m4\nendef\n' >> package/boot/uboot-rockchip/Makefile
           sed -i 's/nanopc-t4-rk3399 \\/nanopc-t4-rk3399 \\\n  nanopi-m4-rk3399 \\/' package/boot/uboot-rockchip/Makefile
         fi
 
-        echo "=== Verify device added ==="
+        echo "=== Verify ==="
         grep -A8 "nanopi-m4" target/linux/rockchip/image/armv8.mk
         grep -A6 "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile
 
-    - name: Update feeds and configure
+    - name: Configure and build
       working-directory: istoreos
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-
-        cat > .config << 'CONFIGEOF'
-        CONFIG_TARGET_rockchip=y
-        CONFIG_TARGET_rockchip_armv8=y
-        CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
-        CONFIG_TARGET_ROOTFS_EXT4FS=y
-        CONFIG_TARGET_ROOTFS_SQUASHFS=y
-        CONFIG_TARGET_ROOTFS_PARTSIZE=4096
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-theme-bootstrap=y
-        CONFIG_PACKAGE_luci-app-dockerman=y
-        CONFIG_PACKAGE_docker-ce=y
-        CONFIG_PACKAGE_docker-ce-cli=y
-        CONFIG_PACKAGE_containerd=y
-        CONFIG_PACKAGE_luci-app-store=y
-        CONFIGEOF
+        echo "CONFIG_TARGET_rockchip=y" > .config
+        echo "CONFIG_TARGET_rockchip_armv8=y" >> .config
+        echo "CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_PARTSIZE=4096" >> .config
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_PACKAGE_luci-theme-bootstrap=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-dockerman=y" >> .config
+        echo "CONFIG_PACKAGE_docker-ce=y" >> .config
+        echo "CONFIG_PACKAGE_docker-ce-cli=y" >> .config
+        echo "CONFIG_PACKAGE_containerd=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
         make defconfig
         grep "DEVICE_friendlyarm" .config || echo "WARNING: No device selected!"
 
@@ -106,7 +88,7 @@ UBOOTEOF
       working-directory: istoreos
       run: |
         make -j$(nproc) || make -j1 V=s
-        echo BUILD_STATUS=success >> $GITHUB_ENV
+        echo "BUILD_STATUS=success" >> $GITHUB_ENV
 
     - name: Organize files
       if: env.BUILD_STATUS == 'success'
@@ -117,7 +99,6 @@ UBOOTEOF
         find bin/targets -name "*.img" -exec cp {} ../output/ \;
         find bin/targets -name "*.bin" -exec cp {} ../output/ \;
         find bin/targets -name "*.itb" -exec cp {} ../output/ \;
-        echo "=== Output files ==="
         ls -la ../output/
 
     - name: Upload firmware
@@ -130,7 +111,7 @@ UBOOTEOF
     - name: Generate release tag
       id: tag
       if: env.BUILD_STATUS == 'success'
-      run: echo "RELEASE_TAG=iStoreOS-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+      run: echo "RELEASE_TAG=iStoreOS-$(date +%%Y.%%m.%%d.%%H%%M)" >> $GITHUB_OUTPUT
 
     - name: Create Release
       if: env.BUILD_STATUS == 'success'
@@ -147,7 +128,7 @@ UBOOTEOF
           - 地址: 192.168.1.1
           - 密码: password
           ### Files
-          - `*.img.gz` / `*.img` - 固件镜像 (写入 TF卡/eMMC)
+          - *.img.gz / *.img - 固件镜像 (写入 TF卡/eMMC)
         files: |
           output/*.img.gz
           output/*.img
