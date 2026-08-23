@@ -46,20 +46,28 @@ jobs:
         ./make.sh nanopi4
 
         echo "=== U-Boot build output ==="
-        ls -la *.bin *.img 2>/dev/null || echo "WARNING: no .bin or .img files found"
+        ls -la *.bin *.img 2>/dev/null || echo "No .bin/.img in build dir"
 
         mkdir -p /tmp/uboot-final
 
-        if [ -f idbloader.bin ] && [ -f uboot.img ]; then
-          cp idbloader.bin /tmp/uboot-final/
+        # make.sh produces *_loader_*.bin (e.g. RK3399MiniLoaderAll*.bin), not idbloader.bin
+        LOADER_FILE=$(ls *_loader_*.bin 2>/dev/null | head -1)
+
+        if [ -n "$LOADER_FILE" ] && [ -f uboot.img ]; then
+          echo "Found loader: $LOADER_FILE, uboot.img"
+          cp "$LOADER_FILE" /tmp/uboot-final/
           cp uboot.img /tmp/uboot-final/
           cp trust.img /tmp/uboot-final/ 2>/dev/null || true
-          dd if=idbloader.bin of=/tmp/uboot-final/u-boot-rockchip.bin bs=512 conv=notrunc
+          # Create combined image: loader at sector 0, uboot at sector 64
+          dd if="$LOADER_FILE" of=/tmp/uboot-final/u-boot-rockchip.bin bs=512 conv=notrunc
           dd if=uboot.img of=/tmp/uboot-final/u-boot-rockchip.bin bs=512 seek=64 conv=notrunc
-          echo "=== Created u-boot-rockchip.bin ==="
+          echo "=== Created combined u-boot-rockchip.bin ==="
+        elif [ -f uboot.img ]; then
+          echo "WARNING: No loader bin found, using uboot.img only"
+          cp uboot.img /tmp/uboot-final/
+          cp trust.img /tmp/uboot-final/ 2>/dev/null || true
         else
-          echo "ERROR: U-Boot build did not produce idbloader.bin and/or uboot.img"
-          echo "Listing build directory for debugging:"
+          echo "ERROR: U-Boot build did not produce expected files"
           ls -la
           exit 1
         fi
@@ -118,21 +126,26 @@ jobs:
         mkdir -p "$UBOOT_STAGING"
 
         echo "=== Check staging ==="
-        ls -la "$UBOOT_STAGING"/ 2>/dev/null | grep -i "nanopi\|u-boot" || echo "No nanopi-m4 u-boot in staging"
+        ls -la "$UBOOT_STAGING"/ 2>/dev/null | grep -i "nanopi\|u-boot\|uboot" || echo "No nanopi-m4 u-boot in staging"
 
-        if [ ! -f "$UBOOT_STAGING/nanopi-m4-rk3399-u-boot-rockchip.bin" ]; then
+        TARGET="$UBOOT_STAGING/nanopi-m4-rk3399-u-boot-rockchip.bin"
+        if [ ! -f "$TARGET" ]; then
           echo "=== Injecting pre-built U-Boot ==="
           if [ -f /tmp/uboot-final/u-boot-rockchip.bin ]; then
-            cp /tmp/uboot-final/u-boot-rockchip.bin "$UBOOT_STAGING/nanopi-m4-rk3399-u-boot-rockchip.bin"
-            echo "Injected successfully"
+            cp /tmp/uboot-final/u-boot-rockchip.bin "$TARGET"
+            echo "Injected combined u-boot-rockchip.bin"
+          elif [ -f /tmp/uboot-final/uboot.img ]; then
+            cp /tmp/uboot-final/uboot.img "$TARGET"
+            echo "Injected uboot.img as fallback"
           else
-            echo "ERROR: No pre-built U-Boot available at /tmp/uboot-final/"
+            echo "ERROR: No pre-built U-Boot available"
+            ls -la /tmp/uboot-final/
             exit 1
           fi
         fi
 
         echo "=== Final check ==="
-        ls -la "$UBOOT_STAGING"/ | grep -i "nanopi\|u-boot" || echo "WARNING: Still no nanopi-m4 u-boot files"
+        ls -la "$UBOOT_STAGING"/ | grep -i "nanopi\|u-boot\|uboot" || echo "WARNING: Still no nanopi-m4 u-boot files"
 
     - name: Compile firmware
       working-directory: istoreos
