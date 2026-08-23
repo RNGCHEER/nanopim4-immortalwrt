@@ -106,16 +106,25 @@ jobs:
       run: |
         make package/boot/uboot-rockchip/compile -j$(nproc) V=s || true
         
-        echo "=== Check staging ==="
-        ls -la staging_dir/target-aarch64_generic_musl/image/ 2>/dev/null | grep -i "nanopi\|u-boot" || echo "No nanopi-m4 u-boot"
+        UBOOT_STAGING=staging_dir/target-aarch64_generic_musl/image
+        mkdir -p "$UBOOT_STAGING"
         
-        if [ ! -f staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin ]; then
+        echo "=== Check staging ==="
+        ls -la "$UBOOT_STAGING"/ 2>/dev/null | grep -i "nanopi\|u-boot" || echo "No nanopi-m4 u-boot in staging"
+        
+        if [ ! -f "$UBOOT_STAGING/nanopi-m4-rk3399-u-boot-rockchip.bin" ]; then
           echo "=== Injecting pre-built U-Boot ==="
-          cp /tmp/uboot-final/u-boot-rockchip.bin staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin
+          if [ -f /tmp/uboot-final/u-boot-rockchip.bin ]; then
+            cp /tmp/uboot-final/u-boot-rockchip.bin "$UBOOT_STAGING/nanopi-m4-rk3399-u-boot-rockchip.bin"
+            echo "Injected successfully"
+          else
+            echo "ERROR: No pre-built U-Boot available at /tmp/uboot-final/"
+            exit 1
+          fi
         fi
         
         echo "=== Final check ==="
-        ls -la staging_dir/target-aarch64_generic_musl/image/ | grep -i "nanopi\|u-boot"
+        ls -la "$UBOOT_STAGING"/ | grep -i "nanopi\|u-boot" || echo "WARNING: Still no nanopi-m4 u-boot files"
 
     - name: Compile firmware
       working-directory: istoreos
