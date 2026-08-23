@@ -30,71 +30,92 @@ jobs:
         docker-images: true
         swap-storage: true
 
-    - name: Clone iStore OS
+    - name: Build FriendlyElec U-Boot
       run: |
         sudo apt-get update
-        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
+        sudo apt-get install -y git bc bison build-essential flex gcc-aarch64-linux-gnu device-tree-compiler python3 swig libssl-dev
+        
+        git clone --depth 1 -b friendlyelec https://github.com/friendlyarm/rkbin.git /tmp/rkbin
+        git clone --depth 1 -b nanopi4-v2017.09 https://github.com/friendlyarm/uboot-rockchip.git /tmp/uboot-rockchip
+        
+        cd /tmp/uboot-rockchip
+        export RKCHIP=rk3399
+        ./make.sh nanopi4
+        
+        echo "=== U-Boot build output ==="
+        ls -la /tmp/uboot-rockchip/*.bin /tmp/uboot-rockchip/*.img 2>/dev/null || true
+        
+        mkdir -p /tmp/uboot-final
+        
+        if [ -f idbloader.bin ]; then cp idbloader.bin /tmp/uboot-final/; fi
+        if [ -f trust.img ]; then cp trust.img /tmp/uboot-final/; fi
+        if [ -f uboot.img ]; then cp uboot.img /tmp/uboot-final/; fi
+        
+        if [ -f idbloader.bin ] && [ -f uboot.img ]; then
+          dd if=idbloader.bin of=/tmp/uboot-final/u-boot-rockchip.bin bs=512 conv=notrunc
+          dd if=uboot.img of=/tmp/uboot-final/u-boot-rockchip.bin bs=512 seek=64 conv=notrunc
+          echo "Created u-boot-rockchip.bin"
+        fi
+        
+        ls -la /tmp/uboot-final/
+
+    - name: Clone iStore OS and configure
+      run: |
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip python3-ply python3-docutils python3-pyelftools python3-setuptools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
         rm -rf istoreos
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
 
-    - name: Add NanoPi M4 device and U-Boot definition
+    - name: Add NanoPi M4 and inject U-Boot
       working-directory: istoreos
       run: |
-        # Add device profile to armv8.mk
+        # Add device to armv8.mk
         if ! grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
-          echo "Adding NanoPi M4 device to armv8.mk..."
           sed -n '/define Device\/friendlyarm_nanopc-t4/,/TARGET_DEVICES += friendlyarm_nanopc-t4/p' target/linux/rockchip/image/armv8.mk > /tmp/nanopc-t4-def.txt
           sed 's/nanopc-t4/nanopi-m4/g; s/NanoPC T4/NanoPi M4/g' /tmp/nanopc-t4-def.txt >> target/linux/rockchip/image/armv8.mk
-          echo "=== NanoPi M4 device added ==="
-          grep -A10 "define Device/friendlyarm_nanopi-m4" target/linux/rockchip/image/armv8.mk
         fi
 
-        # Add U-Boot definition to uboot-rockchip Makefile
+        # Add U-Boot definition
         if ! grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
-          echo "Adding NanoPi M4 U-Boot definition..."
-          # Extract nanopc-t4 U-Boot definition
           sed -n '/define U-Boot\/nanopc-t4-rk3399/,/^endef/p' package/boot/uboot-rockchip/Makefile > /tmp/nanopc-t4-uboot.txt
-          cat /tmp/nanopc-t4-uboot.txt
-          
-          # Create NanoPi M4 U-Boot definition
           sed 's/nanopc-t4/nanopi-m4/g; s/NanoPC T4/NanoPi M4/g' /tmp/nanopc-t4-uboot.txt >> package/boot/uboot-rockchip/Makefile
-          
-          # Add to UBOOT_TARGETS list
           sed -i '/nanopc-t4-rk3399/a\  nanopi-m4-rk3399 \\' package/boot/uboot-rockchip/Makefile
-          
-          echo "=== NanoPi M4 U-Boot added ==="
-          grep -A10 "define U-Boot/nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile
         fi
 
-    - name: Configure and build U-Boot
+    - name: Configure iStore OS
       working-directory: istoreos
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
-        cat > .config << 'EOF'
-        CONFIG_TARGET_rockchip=y
-        CONFIG_TARGET_rockchip_armv8=y
-        CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y
-        CONFIG_TARGET_ROOTFS_EXT4FS=y
-        CONFIG_TARGET_ROOTFS_SQUASHFS=y
-        CONFIG_TARGET_ROOTFS_PARTSIZE=4096
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-theme-bootstrap=y
-        CONFIG_PACKAGE_luci-app-dockerman=y
-        CONFIG_PACKAGE_docker-ce=y
-        CONFIG_PACKAGE_docker-ce-cli=y
-        CONFIG_PACKAGE_containerd=y
-        CONFIG_PACKAGE_luci-app-store=y
-        EOF
+        echo "CONFIG_TARGET_rockchip=y" > .config
+        echo "CONFIG_TARGET_rockchip_armv8=y" >> .config
+        echo "CONFIG_TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
+        echo "CONFIG_TARGET_ROOTFS_PARTSIZE=4096" >> .config
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_PACKAGE_luci-theme-bootstrap=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-dockerman=y" >> .config
+        echo "CONFIG_PACKAGE_docker-ce=y" >> .config
+        echo "CONFIG_PACKAGE_docker-ce-cli=y" >> .config
+        echo "CONFIG_PACKAGE_containerd=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
         make defconfig
-        
-        echo "=== Building U-Boot ==="
+
+    - name: Build U-Boot and inject
+      working-directory: istoreos
+      run: |
         make package/boot/uboot-rockchip/compile -j$(nproc) V=s || true
         
-        echo "=== Checking U-Boot output ==="
-        find staging_dir -name "*u-boot-rockchip.bin" -type f 2>/dev/null
-        ls -la staging_dir/target-aarch64_generic_musl/image/ 2>/dev/null | grep -i "nanopi\|u-boot" || true
+        echo "=== Check staging ==="
+        ls -la staging_dir/target-aarch64_generic_musl/image/ 2>/dev/null | grep -i "nanopi\|u-boot" || echo "No nanopi-m4 u-boot"
+        
+        if [ ! -f staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin ]; then
+          echo "=== Injecting pre-built U-Boot ==="
+          cp /tmp/uboot-final/u-boot-rockchip.bin staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin
+        fi
+        
+        echo "=== Final check ==="
+        ls -la staging_dir/target-aarch64_generic_musl/image/ | grep -i "nanopi\|u-boot"
 
     - name: Compile firmware
       working-directory: istoreos
