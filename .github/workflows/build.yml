@@ -54,6 +54,34 @@ jobs:
         echo 'src-git istore https://github.com/linkease/istore.git;main' >> feeds.conf.default
         ./scripts/feeds update -a
         ./scripts/feeds install -a
+
+        # Fix network configuration for single Ethernet port (NanoPi M4)
+        mkdir -p files/etc/uci-defaults
+        cat > files/etc/uci-defaults/99-nanopi-m4-network << 'NETEOF'
+        #!/bin/sh
+        # NanoPi M4 single port network configuration
+        
+        # Delete default WAN and WAN6 interfaces
+        uci delete network.wan 2>/dev/null || true
+        uci delete network.wan6 2>/dev/null || true
+        
+        # Configure LAN to use eth0 (single Ethernet port)
+        uci set network.lan.device='eth0'
+        uci set network.lan.proto='static'
+        uci set network.lan.ipaddr='192.168.1.1'
+        uci set network.lan.netmask='255.255.255.0'
+        
+        # Disable WAN firewall zone
+        uci delete firewall.@zone[1] 2>/dev/null || true
+        
+        # Commit changes
+        uci commit network
+        uci commit firewall
+        
+        echo "NanoPi M4 network configured: single LAN port on eth0"
+        NETEOF
+        chmod +x files/etc/uci-defaults/99-nanopi-m4-network
+
         # Use custom .config for image generation
         cat > .config << 'EOF'
         # Target System
@@ -164,7 +192,7 @@ jobs:
       id: tag
       if: env.BUILD_STATUS == 'success'
       run: |
-        echo "RELEASE_TAG=build-$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+        echo "RELEASE_TAG=build-$(date +%%Y.%%m.%%d.%%H%%M)" >> $GITHUB_OUTPUT
 
     - name: Create Release
       if: env.BUILD_STATUS == 'success'
@@ -179,7 +207,6 @@ jobs:
           - Docker 支持
           - OpenClash (科学上网)
           - 4G/5G 模组支持
-          - Multi-WAN 负载均衡
           
           ### Supported Devices
           - FriendlyElec NanoPi M4
@@ -189,9 +216,13 @@ jobs:
           - 用户名: root
           - 密码: password
           
+          ### Network Configuration
+          - 单网口模式 (NanoPi M4 只有一个网口)
+          - 网口配置为 LAN 模式
+          - DHCP 服务器自动分配 IP
+          
           ### Files
           - `*.img.gz` / `*.img` - 固件镜像 (用于 dd 或 Etcher 写入 TF卡/eMMC)
-          - `*.bin` / `*.itb` - 其他固件文件
         files: |
           output/*.img.gz
           output/*.img
