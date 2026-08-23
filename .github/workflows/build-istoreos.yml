@@ -37,15 +37,38 @@ jobs:
         rm -rf istoreos
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
 
-    - name: Configure iStore OS
+    - name: Add NanoPi M4 device and U-Boot definition
       working-directory: istoreos
       run: |
-        # Add device profile (NanoPi M4 based on NanoPC-T4)
+        # Add device profile to armv8.mk
         if ! grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
+          echo "Adding NanoPi M4 device to armv8.mk..."
           sed -n '/define Device\/friendlyarm_nanopc-t4/,/TARGET_DEVICES += friendlyarm_nanopc-t4/p' target/linux/rockchip/image/armv8.mk > /tmp/nanopc-t4-def.txt
           sed 's/nanopc-t4/nanopi-m4/g; s/NanoPC T4/NanoPi M4/g' /tmp/nanopc-t4-def.txt >> target/linux/rockchip/image/armv8.mk
+          echo "=== NanoPi M4 device added ==="
+          grep -A10 "define Device/friendlyarm_nanopi-m4" target/linux/rockchip/image/armv8.mk
         fi
 
+        # Add U-Boot definition to uboot-rockchip Makefile
+        if ! grep -q "nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile; then
+          echo "Adding NanoPi M4 U-Boot definition..."
+          # Extract nanopc-t4 U-Boot definition
+          sed -n '/define U-Boot\/nanopc-t4-rk3399/,/^endef/p' package/boot/uboot-rockchip/Makefile > /tmp/nanopc-t4-uboot.txt
+          cat /tmp/nanopc-t4-uboot.txt
+          
+          # Create NanoPi M4 U-Boot definition
+          sed 's/nanopc-t4/nanopi-m4/g; s/NanoPC T4/NanoPi M4/g' /tmp/nanopc-t4-uboot.txt >> package/boot/uboot-rockchip/Makefile
+          
+          # Add to UBOOT_TARGETS list
+          sed -i '/nanopc-t4-rk3399/a\  nanopi-m4-rk3399 \\' package/boot/uboot-rockchip/Makefile
+          
+          echo "=== NanoPi M4 U-Boot added ==="
+          grep -A10 "define U-Boot/nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile
+        fi
+
+    - name: Configure and build U-Boot
+      working-directory: istoreos
+      run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         
@@ -65,30 +88,13 @@ jobs:
         CONFIG_PACKAGE_luci-app-store=y
         EOF
         make defconfig
-
-    - name: Build U-Boot package
-      working-directory: istoreos
-      run: |
-        echo "=== Building U-Boot package ==="
-        make package/boot/uboot-rockchip/compile -j$(nproc) V=s || echo "U-Boot build may have issues, checking..."
         
-        echo "=== Check U-Boot output ==="
-        find staging_dir -name "*nanopi-m4*" -type f 2>/dev/null || echo "No nanopi-m4 in staging"
-        find build_dir -name "*nanopi-m4*u-boot*" -type f 2>/dev/null || echo "No nanopi-m4 u-boot in build"
+        echo "=== Building U-Boot ==="
+        make package/boot/uboot-rockchip/compile -j$(nproc) V=s || true
         
-        if [ ! -f staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin ]; then
-          echo "=== U-Boot not found, checking NanoPC-T4 as reference ==="
-          find staging_dir -name "*nanopc-t4*u-boot*" -type f 2>/dev/null || echo "No nanopc-t4 u-boot"
-          find staging_dir -name "*rk3399*u-boot*" -type f 2>/dev/null || echo "No rk3399 u-boot"
-          
-          if [ -f staging_dir/target-aarch64_generic_musl/image/nanopc-t4-rk3399-u-boot-rockchip.bin ]; then
-            echo "Copying NanoPC-T4 U-Boot for NanoPi M4..."
-            cp staging_dir/target-aarch64_generic_musl/image/nanopc-t4-rk3399-u-boot-rockchip.bin staging_dir/target-aarch64_generic_musl/image/nanopi-m4-rk3399-u-boot-rockchip.bin
-          fi
-        fi
-        
-        echo "=== Final U-Boot check ==="
-        ls -la staging_dir/target-aarch64_generic_musl/image/*u-boot* 2>/dev/null || echo "No u-boot files found"
+        echo "=== Checking U-Boot output ==="
+        find staging_dir -name "*u-boot-rockchip.bin" -type f 2>/dev/null
+        ls -la staging_dir/target-aarch64_generic_musl/image/ 2>/dev/null | grep -i "nanopi\|u-boot" || true
 
     - name: Compile firmware
       working-directory: istoreos
