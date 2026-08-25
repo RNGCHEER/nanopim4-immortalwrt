@@ -56,7 +56,7 @@ jobs:
         git clone -b openwrt-24.10 --depth 1 https://github.com/immortalwrt/immortalwrt.git
         cd immortalwrt
         # Add NanoPi M4 device profile + U-Boot
-        cp ../patches/*.patch .
+        cp "$GITHUB_WORKSPACE/patches"/*.patch .
         patch -p1 < 001-add-nanopi-m4-device.patch
         patch -p1 < 002-add-nanopi-m4-uboot.patch
         echo "REPO_NAME=immortalwrt" >> $GITHUB_ENV
