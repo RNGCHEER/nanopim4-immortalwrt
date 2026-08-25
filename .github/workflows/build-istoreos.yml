@@ -41,26 +41,19 @@ jobs:
         rm -rf istoreos
         git clone -b istoreos-24.10 --depth 1 https://github.com/istoreos/istoreos.git
 
-    - name: Add NanoPi M4 device support
+    - name: Add NanoPi M4 device + U-Boot support
       working-directory: istoreos
       run: |
-        echo "=== Adding NanoPi M4 device support ==="
-        if ! grep -q "nanopi-m4" target/linux/rockchip/image/armv8.mk; then
-          echo "" >> target/linux/rockchip/image/armv8.mk
-          echo "define Device/friendlyarm_nanopi-m4" >> target/linux/rockchip/image/armv8.mk
-          echo "  DEVICE_VENDOR := FriendlyARM" >> target/linux/rockchip/image/armv8.mk
-          echo "  DEVICE_MODEL := NanoPi M4" >> target/linux/rockchip/image/armv8.mk
-          echo "  SOC := rk3399" >> target/linux/rockchip/image/armv8.mk
-          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb3" >> target/linux/rockchip/image/armv8.mk
-          echo "  KERNEL_INSTALL := 1" >> target/linux/rockchip/image/armv8.mk
-          echo "  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata" >> target/linux/rockchip/image/armv8.mk
-          echo "  SUPPORTED_DEVICES := friendlyarm,nanopi-m4" >> target/linux/rockchip/image/armv8.mk
-          echo "endef" >> target/linux/rockchip/image/armv8.mk
-          echo "TARGET_DEVICES += friendlyarm_nanopi-m4" >> target/linux/rockchip/image/armv8.mk
-          echo "Device added to armv8.mk"
-        fi
-        echo "=== Verify device added ==="
-        grep -A10 "define Device/friendlyarm_nanopi-m4" target/linux/rockchip/image/armv8.mk
+        echo "=== Applying NanoPi M4 patches (device + U-Boot) ==="
+        ls -la ../patches/
+        for patch in ../patches/*.patch; do
+          echo "--- Applying $patch ---"
+          patch -p1 < "$patch" || { echo "ERROR: patch failed: $patch"; exit 1; }
+        done
+        echo "=== Verify device in armv8.mk ==="
+        grep -A8 "define Device/friendlyarm_nanopi-m4" target/linux/rockchip/image/armv8.mk
+        echo "=== Verify U-Boot target in uboot-rockchip/Makefile ==="
+        grep -A6 "U-Boot/nanopi-m4-rk3399" package/boot/uboot-rockchip/Makefile
 
     - name: Configure iStore OS
       working-directory: istoreos
@@ -173,7 +166,7 @@ jobs:
     - name: Generate release tag
       id: tag
       if: env.BUILD_STATUS == 'success'
-      run: echo "RELEASE_TAG=iStoreOS-NanoPiM4-$(date +%%Y.%%m.%%d.%%H%%M)" >> $GITHUB_OUTPUT
+      run: echo "RELEASE_TAG=iStoreOS-NanoPiM4-$(date +%Y.%m.%d.%H%M)" >> $GITHUB_OUTPUT
 
     - name: Create Release
       if: env.BUILD_STATUS == 'success'
