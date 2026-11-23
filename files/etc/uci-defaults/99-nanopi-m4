@@ -1,0 +1,34 @@
+#!/bin/sh
+# NanoPi M4: the built-in Ethernet port is LAN; USB networking supplies WAN.
+uci -q batch <<'EOF'
+set network.lan.device='eth0'
+set network.lan.proto='static'
+set network.lan.ipaddr='192.168.1.1'
+set network.lan.netmask='255.255.255.0'
+set network.wan=interface
+set network.wan.proto='dhcp'
+set network.wan.device='usb0'
+set network.wan6=interface
+set network.wan6.proto='dhcpv6'
+set network.wan6.device='usb0'
+set dhcp.lan=dhcp
+set dhcp.lan.interface='lan'
+set dhcp.lan.start='100'
+set dhcp.lan.limit='150'
+set dhcp.lan.leasetime='12h'
+set luci.main.mediaurlbase='/luci-static/argon'
+set luci.main.lang='zh_cn'
+set luci.main.indexurl='/admin/quickstart'
+set system.@system[0].hostname='NanoPi-M4'
+commit network
+commit dhcp
+commit luci
+commit system
+EOF
+uci -q delete dhcp.lan.ignore
+uci commit dhcp
+echo 'root:password' | chpasswd
+# The official QuickStart controller registers the first admin menu entry.
+/etc/init.d/quickstart enable
+/etc/init.d/startdhns enable
+exit 0

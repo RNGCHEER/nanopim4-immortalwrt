@@ -1,0 +1,11 @@
+#!/bin/sh
+[ "$ACTION" = add ] || exit 0
+case "$INTERFACE" in
+  usb[0-9]*|wwan[0-9]*|eth[1-9]*|enx[0-9a-fA-F]*)
+    uci set network.wan.device="$INTERFACE"
+    uci set network.wan6.device="$INTERFACE"
+    uci commit network
+    /etc/init.d/network reload
+    ;;
+esac
+exit 0
