@@ -8,6 +8,8 @@ case "${DISTRO:?}" in
 esac
 source_dir="$GITHUB_WORKSPACE/source"
 output="$GITHUB_WORKSPACE/output"
+mkdir -p "$output"
+exec > >(tee -a "$GITHUB_WORKSPACE/${1:?}.log") 2>&1
 
 case "${1:?}" in
   source)
@@ -32,9 +34,12 @@ case "${1:?}" in
     grep -Eq '^src-git nas ' feeds.conf.default || echo 'src-git nas https://github.com/linkease/nas-packages.git;master' >> feeds.conf.default
     grep -Eq '^src-git nas_luci ' feeds.conf.default || echo 'src-git nas_luci https://github.com/linkease/nas-packages-luci.git;main' >> feeds.conf.default
     ./scripts/feeds update -a
-    ./scripts/feeds install -a
     # The store's own task libraries must match its minimum version constraints.
     store_feed=$(awk '$1 == "src-git" && $3 ~ /\/istore(\.git)?[;^]/ {print $2; exit}' feeds.conf.default)
+    while IFS= read -r feed; do
+      case "$feed" in nas|nas_luci|"$store_feed") continue ;; esac
+      ./scripts/feeds install -a -p "$feed"
+    done < <(awk '$1 ~ /^src-/ {print $2}' feeds.conf.default)
     ./scripts/feeds install -f -p "$store_feed" taskd luci-lib-xterm luci-lib-taskd luci-app-store
     ./scripts/feeds install -f -p nas quickstart
     ./scripts/feeds install -f -p nas_luci luci-app-quickstart
@@ -47,14 +52,25 @@ case "${1:?}" in
   configure)
     cd "$source_dir"
     cp "$GITHUB_WORKSPACE/.config" .config
+    cp .config "$output/requested.config"
     cp -a "$GITHUB_WORKSPACE/files" ./
     find files -type f \( -path '*/uci-defaults/*' -o -path '*/hotplug.d/*' \) -exec chmod 755 {} +
     make defconfig
+    # Save diagnostics before any required-selection check can terminate the step.
+    cp .config "$output/build.config"
+    cp tmp/.config-package.in "$output/config-package.in"
+    cp tmp/.packageinfo "$output/packageinfo"
     # Fail instead of silently dropping a requested device or UI component.
-    for symbol in TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4 PACKAGE_luci-theme-argon PACKAGE_quickstart PACKAGE_luci-app-quickstart PACKAGE_luci-app-store PACKAGE_luci-app-openclash PACKAGE_opkg; do
-      grep -qx "CONFIG_${symbol}=y" .config || { echo "Missing required selection: $symbol"; exit 1; }
+    for symbol in TARGET_rockchip_armv8_DEVICE_friendlyarm_nanopi-m4 PACKAGE_luci-theme-argon PACKAGE_xz-utils PACKAGE_tar PACKAGE_luci-app-store PACKAGE_quickstart PACKAGE_luci-app-quickstart PACKAGE_luci-app-openclash PACKAGE_opkg; do
+      if ! grep -qx "CONFIG_${symbol}=y" .config; then
+        echo "Missing required selection: $symbol"
+        awk -v symbol="$symbol" '$1 == "config" || $1 == "menuconfig" {show = ($2 == symbol)} show {print}' tmp/.config-package.in
+        exit 1
+      fi
     done
-    grep -qx '# CONFIG_USE_APK is not set' .config
+    if grep -qx 'CONFIG_USE_APK=y' .config; then
+      echo 'APK is enabled; this build requires IPK/opkg'; exit 1
+    fi
     mkdir -p "$output"
     cp .config "$output/build.config"
     ./scripts/diffconfig.sh > "$output/diffconfig"

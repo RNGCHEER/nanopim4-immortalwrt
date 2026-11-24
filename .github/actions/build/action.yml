@@ -44,6 +44,16 @@ runs:
       env:
         DISTRO: ${{ inputs.distribution }}
       run: bash scripts/build.sh configure
+    - name: Upload resolved build configuration
+      uses: actions/upload-artifact@v4
+      with:
+        name: config-${{ inputs.distribution }}-${{ inputs.output-kind }}-${{ github.run_id }}
+        path: |
+          output/build.config
+          output/build-info.txt
+          output/diffconfig
+        if-no-files-found: error
+        retention-days: 7
     - name: Compile
       shell: bash
       env:
@@ -70,9 +80,17 @@ runs:
       with:
         name: logs-${{ inputs.distribution }}-${{ inputs.output-kind }}-${{ github.run_id }}
         path: |
+          source.log
+          feeds.log
+          configure.log
+          compile.log
           build.log
           download.log
           output/build-info.txt
           output/build.config
+          output/requested.config
+          output/config-package.in
+          output/packageinfo
+          source/logs/
         if-no-files-found: ignore
         retention-days: 7
