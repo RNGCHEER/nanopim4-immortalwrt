@@ -2,7 +2,7 @@ name: Build ImmortalWrt for NanoPi M4
 on:
   push:
     branches: [main]
-    paths: ['.config', 'files/**', 'scripts/**', '.github/actions/build/**', '.github/workflows/build.yml']
+    paths: ['.config', 'files/**', 'scripts/**', '.github/actions/build/**', '.github/immortalwrt/**', '.github/workflows/build.yml']
   workflow_dispatch:
     inputs:
       source_ref:
@@ -23,6 +23,7 @@ jobs:
       - uses: ./.github/actions/build
         with:
           distribution: immortalwrt
+          rust-llvm-from-source: 'true'
           output-kind: firmware
           source-ref: ${{ inputs.source_ref }}
       - name: Publish immortalwrt firmware

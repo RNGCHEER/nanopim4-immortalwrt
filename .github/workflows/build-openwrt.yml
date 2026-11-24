@@ -2,7 +2,7 @@ name: Build NanoPi M4 IPK Packages
 on:
   push:
     branches: [main]
-    paths: ['.config', 'files/**', 'scripts/**', '.github/actions/build/**', '.github/workflows/build-openwrt.yml']
+    paths: ['.config', 'files/**', 'scripts/**', '.github/actions/build/**', '.github/immortalwrt/**', '.github/workflows/build-openwrt.yml']
   workflow_dispatch:
     inputs:
       distribution:
@@ -28,6 +28,7 @@ jobs:
       - uses: ./.github/actions/build
         with:
           distribution: ${{ inputs.distribution || 'immortalwrt' }}
+          rust-llvm-from-source: 'true'
           output-kind: packages
           source-ref: ${{ inputs.source_ref }}
       - name: Publish IPK bundle

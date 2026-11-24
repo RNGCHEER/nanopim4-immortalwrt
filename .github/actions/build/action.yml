@@ -10,6 +10,9 @@ inputs:
   source-ref:
     description: Optional source tag or iStoreOS branch
     default: ''
+  rust-llvm-from-source:
+    description: Avoid expired Rust CI LLVM artifacts for ImmortalWrt
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -39,6 +42,10 @@ runs:
       env:
         DISTRO: ${{ inputs.distribution }}
       run: bash scripts/build.sh feeds
+    - name: Prepare source-built Rust LLVM
+      if: inputs.rust-llvm-from-source == 'true' && inputs.distribution == 'immortalwrt'
+      shell: bash
+      run: python3 .github/immortalwrt/prepare-rust.py "$SOURCE_DIR"
     - name: Configure Argon and QuickStart
       shell: bash
       env:
